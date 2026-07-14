@@ -5,20 +5,38 @@ import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { Branch, AuditLog, RenewalConsiderationSession } from '../types';
 import { initialBranches, initialAuditLogs } from '../initialData';
 
+const env = (import.meta as any).env || {};
+
 const firebaseConfig = {
-  apiKey: "AIzaSyB4wZ-xHOHNinUHOrF8ZU_mdlOT8hPcAzQ",
-  authDomain: "gen-lang-client-0334181774.firebaseapp.com",
-  projectId: "gen-lang-client-0334181774",
-  storageBucket: "gen-lang-client-0334181774.firebasestorage.app",
-  messagingSenderId: "1046077170783",
-  appId: "1:1046077170783:web:54f64ac47a35784f5367ea"
+  apiKey: env.VITE_FIREBASE_API_KEY || "AIzaSyB4wZ-xHOHNinUHOrF8ZU_mdlOT8hPcAzQ",
+  authDomain: env.VITE_FIREBASE_AUTH_DOMAIN || "gen-lang-client-0334181774.firebaseapp.com",
+  projectId: env.VITE_FIREBASE_PROJECT_ID || "gen-lang-client-0334181774",
+  storageBucket: env.VITE_FIREBASE_STORAGE_BUCKET || "gen-lang-client-0334181774.firebasestorage.app",
+  messagingSenderId: env.VITE_FIREBASE_MESSAGING_SENDER_ID || "1046077170783",
+  appId: env.VITE_FIREBASE_APP_ID || "1:1046077170783:web:54f64ac47a35784f5367ea"
 };
 
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
+
+// Detect if we are running in the AI Studio development/preview sandbox environment or localhost.
+// If yes, we use the custom sandboxed database ID. 
+// If no (running in production such as on Vercel), we fall back to the standard "(default)" database ID.
+const isDevPreview = typeof window !== 'undefined' && (
+  window.location.hostname.includes('run.app') || 
+  window.location.hostname.includes('localhost') || 
+  window.location.hostname.includes('127.0.0.1')
+);
+
+const databaseId = env.VITE_FIRESTORE_DATABASE_ID || (
+  isDevPreview 
+    ? "ai-studio-stlleasemanageme-8bd1ac69-01b5-4826-ad17-0e92f42dcabf" 
+    : "(default)"
+);
+
 export const db = initializeFirestore(app, {
   ignoreUndefinedProperties: true
-}, "ai-studio-stlleasemanageme-8bd1ac69-01b5-4826-ad17-0e92f42dcabf");
+}, databaseId);
 
 export const storage = getStorage(app);
 

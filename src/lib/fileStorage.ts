@@ -22,6 +22,19 @@ function base64ToUint8(base64: string): Uint8Array {
   return bytes;
 }
 
+// Timeout helper to prevent infinite hangs in case Firestore has connection or credentials issues
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number = 20000): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) =>
+      setTimeout(
+        () => reject(new Error('เชื่อมต่อฐานข้อมูลล้มเหลวหรือหมดเวลา (Database Timeout) กรุณาตรวจสอบการตั้งค่า Firebase Config และสิทธิ์การเข้าถึงฐานข้อมูลของท่าน')),
+        timeoutMs
+      )
+    )
+  ]);
+}
+
 /**
  * Uploads a file (e.g. PDF) of any size to Firestore by splitting it into 500KB chunks.
  * This completely avoids Firebase Storage bucket issues and the Firestore 1MB document limit.
@@ -42,7 +55,7 @@ export async function uploadFileToFirestore(file: File): Promise<string> {
   
   // 1. Write the metadata document inside 'branches'
   const metadataRef = doc(db, 'branches', fileId);
-  await setDoc(metadataRef, {
+  await withTimeout(setDoc(metadataRef, {
     id: fileId,
     name: `[เอกสารสัญญาเช่า] ${file.name}`, // satisfies branches validation rule: name must be a non-empty string
     fileName: file.name,
@@ -51,7 +64,7 @@ export async function uploadFileToFirestore(file: File): Promise<string> {
     totalSize: file.size,
     uploadedAt: new Date().toISOString(),
     isDocMeta: true
-  });
+  }), 25000); // Allow slightly longer for metadata + connection init
   
   // 2. Write the chunk documents inside 'branches' (safe, sequential, and highly reliable)
   for (let i = 0; i < totalChunks; i++) {
@@ -63,14 +76,14 @@ export async function uploadFileToFirestore(file: File): Promise<string> {
     // We use precise ID: fileId_chunk_index so we can fetch it directly without indexes!
     const chunkId = `${fileId}_chunk_${i}`;
     const chunkRef = doc(db, 'branches', chunkId);
-    await setDoc(chunkRef, {
+    await withTimeout(setDoc(chunkRef, {
       id: chunkId,
       name: `[ส่วนย่อยสัญญาเช่า] Chunk ${i}`, // satisfies branches validation rule
       fileId: fileId,
       index: i,
       data: base64Data,
       isDocChunk: true
-    });
+    }), 15000);
   }
   
   // Return a custom protocol URL
@@ -86,7 +99,7 @@ export async function uploadFileToFirestore(file: File): Promise<string> {
 export async function downloadFileFromFirestore(fileId: string): Promise<string> {
   // 1. Get the metadata from the 'branches' collection
   const metadataRef = doc(db, 'branches', fileId);
-  const metadataSnap = await getDoc(metadataRef);
+  const metadataSnap = await withTimeout(getDoc(metadataRef), 15000);
   
   if (!metadataSnap.exists()) {
     throw new Error('ไม่พบข้อมูลเอกสารสัญญาเช่าในฐานข้อมูลหลัก (Metadata not found)');
@@ -101,7 +114,7 @@ export async function downloadFileFromFirestore(fileId: string): Promise<string>
   // 2. Fetch all chunks in order by their precise document IDs from 'branches' collection
   for (let i = 0; i < totalChunks; i++) {
     const chunkRef = doc(db, 'branches', `${fileId}_chunk_${i}`);
-    const chunkSnap = await getDoc(chunkRef);
+    const chunkSnap = await withTimeout(getDoc(chunkRef), 10000);
     if (!chunkSnap.exists()) {
       throw new Error(`ไม่พบไฟล์ส่วนย่อยที่ ${i + 1}/${totalChunks} ในระบบฐานข้อมูล`);
     }
