@@ -1,0 +1,75 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary: #b70013;
+  --color-primary-container: #e11a22;
+  --color-primary-fixed: #ffdad6;
+  --color-primary-fixed-dim: #ffb4ab;
+  --color-on-primary: #ffffff;
+  --color-on-primary-container: #fff7f6;
+  --color-on-primary-fixed: #410002;
+  --color-on-primary-fixed-variant: #93000d;
+
+  --color-secondary: #5f5e5e;
+  --color-secondary-container: #e2dfde;
+  --color-on-secondary-container: #636262;
+  
+  --color-surface: #f6faff;
+  --color-surface-dim: #d2dbe4;
+  --color-surface-bright: #f6faff;
+  --color-surface-container-lowest: #ffffff;
+  --color-surface-container-low: #ecf5fe;
+  --color-surface-container: #e6eff8;
+  --color-surface-container-high: #e0e9f2;
+  --color-surface-container-highest: #dbe4ed;
+  
+  --color-on-surface: #141d23;
+  --color-on-surface-variant: #5d3f3c;
+  --color-inverse-surface: #293138;
+  --color-inverse-on-surface: #e9f2fb;
+  --color-outline: #926e6b;
+  --color-outline-variant: #e7bdb8;
+
+  --font-sans: "Inter", system-ui, sans-serif;
+  --font-display: "Hanken Grotesk", sans-serif;
+}
+
+@utility material-symbols-outlined {
+  font-family: 'Material Symbols Outlined';
+  font-weight: normal;
+  font-style: normal;
+  font-size: 24px;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Custom styled inputs to match exact layouts */
+.form-label-styled {
+  display: block;
+  font-size: 14px;
+  font-weight: 500;
+  color: #141d23;
+  margin-bottom: 6px;
+}
+
+.form-input-styled {
+  width: 100%;
+  background-color: #ffffff;
+  border: 1px solid #e7bdb8;
+  border-radius: 4px;
+  padding: 8px 12px;
+  font-size: 14px;
+  outline: none;
+  transition: all 0.2s;
+}
+
+.form-input-styled:focus {
+  border-color: #e11a22;
+  box-shadow: 0 0 0 1px #e11a22;
+}

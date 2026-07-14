@@ -1,0 +1,98 @@
+{
+  "entities": {
+    "Branch": {
+      "title": "Branch",
+      "description": "Information about a branch lease and facilities",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "type": { "type": "string" },
+        "province": { "type": "string" },
+        "openingDate": { "type": "string" },
+        "startDate": { "type": "string" },
+        "endDate": { "type": "string" },
+        "status": { "type": "string" },
+        "buildingStatus": { "type": "string" },
+        "rent": { "type": "number" },
+        "deposit": { "type": "number" },
+        "depositRef": { "type": "string" },
+        "advanceRent": { "type": "number" },
+        "advanceRentRef": { "type": "string" },
+        "noticePeriod": { "type": "string" },
+        "address": { "type": "string" },
+        "manager": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "operatingHours": { "type": "string" },
+        "area": { "type": "string" },
+        "spaceSize": { "type": "string" },
+        "boothCount": { "type": "string" },
+        "floorCount": { "type": "string" },
+        "contractNumber": { "type": "string" },
+        "pdfUrl": { "type": "string" },
+        "pdfFile": { "type": "string" },
+        "networkType": { "type": "string" },
+        "networkOtherDetail": { "type": "string" },
+        "networkDetail": { "type": "string" },
+        "cctvType": { "type": "string" },
+        "cctvCount": { "type": "string" },
+        "cctvDetail": { "type": "string" },
+        "printerType": { "type": "string" },
+        "printerDetail": { "type": "string" },
+        "landlordName": { "type": "string" },
+        "landlordPhone": { "type": "string" },
+        "signTaxInfo": { "type": "string" },
+        "landTaxInfo": { "type": "string" },
+        "phoneTabletSelected": { "type": "boolean" },
+        "phoneTabletNumber": { "type": "string" },
+        "phoneTabletPackage": { "type": "string" },
+        "phoneTabletType": { "type": "string" },
+        "phoneTabletModel": { "type": "string" }
+      },
+      "required": ["id", "name"]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "System and user action logs",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "dateTime": { "type": "string" },
+        "user": { "type": "string" },
+        "userInitial": { "type": "string" },
+        "action": { "type": "string" },
+        "target": { "type": "string" },
+        "description": { "type": "string" }
+      },
+      "required": ["id", "dateTime", "user", "action", "description"]
+    },
+    "RenewalConsiderationSession": {
+      "title": "RenewalConsiderationSession",
+      "description": "Lease renewal consideration batch session",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "createdDate": { "type": "string" },
+        "startDateFilter": { "type": "string" },
+        "endDateFilter": { "type": "string" }
+      },
+      "required": ["id", "name", "createdDate"]
+    }
+  },
+  "firestore": {
+    "branches": {
+      "schema": "Branch",
+      "description": "Collection of retail branches and their lease contracts"
+    },
+    "logs": {
+      "schema": "AuditLog",
+      "description": "Collection of system actions and audit log entries"
+    },
+    "sessions": {
+      "schema": "RenewalConsiderationSession",
+      "description": "Collection of renewal consideration reports/sessions"
+    }
+  }
+}

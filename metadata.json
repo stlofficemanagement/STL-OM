@@ -1,0 +1,8 @@
+{
+  "name": "Remix: STL Lease Management",
+  "description": "ระบบจัดการสัญญาเช่าสาขาและข้อมูลทางการเงินอย่างครบวงจร (STL Lease \u0026 Branch Management System)",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
