@@ -1,6 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import { initializeFirestore, collection, onSnapshot, doc, setDoc, deleteDoc, writeBatch, getDocs } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
+import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { Branch, AuditLog, RenewalConsiderationSession } from '../types';
 import { initialBranches, initialAuditLogs } from '../initialData';
 
@@ -18,6 +19,15 @@ export const auth = getAuth(app);
 export const db = initializeFirestore(app, {
   ignoreUndefinedProperties: true
 }, "ai-studio-stlleasemanageme-8bd1ac69-01b5-4826-ad17-0e92f42dcabf");
+
+export const storage = getStorage(app);
+
+export async function uploadFileToFirebaseStorage(file: File, filename: string): Promise<string> {
+  const uniqueId = Date.now() + "_" + Math.random().toString(36).substring(2, 9);
+  const storageRef = ref(storage, `contracts/${uniqueId}_${filename}`);
+  const snapshot = await uploadBytes(storageRef, file);
+  return await getDownloadURL(snapshot.ref);
+}
 
 const initialSessions: RenewalConsiderationSession[] = [
   {

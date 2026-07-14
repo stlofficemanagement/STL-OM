@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { User } from 'firebase/auth';
 import { Branch, Lease } from '../types';
 import { initAuth, googleSignIn, uploadFileToDrive } from '../lib/drive';
+import { uploadFileToFirebaseStorage } from '../lib/firebase';
 
 export const DEFAULT_BRANCH_TYPES = [
   'AIS BUDDY',
@@ -313,32 +314,16 @@ export default function BranchFormView({
     let finalPdfUrl = pdfUrl;
     let finalPdfName = simulatedFileName;
 
-    // Server File Upload Logic
+    // Firebase Storage File Upload Logic
     if (attachedFile) {
       setIsUploading(true);
       try {
-        const formData = new FormData();
-        formData.append('file', attachedFile);
-        
-        const uploadRes = await fetch('/api/upload', {
-          method: 'POST',
-          body: formData,
-        });
-        
-        if (!uploadRes.ok) {
-          const errData = await uploadRes.json().catch(() => ({}));
-          throw new Error(errData.error || 'การอัปโหลดไฟล์ไปยังเซิร์ฟเวอร์ล้มเหลว');
-        }
-        
-        const uploadResult = await uploadRes.json();
-        if (uploadResult.success) {
-          finalPdfUrl = uploadResult.fileUrl;
-          finalPdfName = uploadResult.fileName;
-        } else {
-          throw new Error(uploadResult.error || 'การอัปโหลดไฟล์ล้มเหลว');
-        }
+        const uploadName = simulatedFileName || `สัญญาเช่าจริง_${name.trim()}_${contractNumber.trim()}.pdf`;
+        const downloadUrl = await uploadFileToFirebaseStorage(attachedFile, uploadName);
+        finalPdfUrl = downloadUrl;
+        finalPdfName = uploadName;
       } catch (uploadError: any) {
-        console.error('Failed to upload file to Server:', uploadError);
+        console.error('Failed to upload file to Firebase Storage:', uploadError);
         alert(`เกิดข้อผิดพลาดในการอัปโหลดไฟล์สัญญาเช่า: ${uploadError.message || uploadError}`);
         setIsUploading(false);
         return;
@@ -447,8 +432,8 @@ export default function BranchFormView({
       {isUploading && (
         <div className="fixed inset-0 bg-black/60 z-[9999] flex flex-col items-center justify-center gap-3">
           <div className="w-12 h-12 border-4 border-white/25 border-t-white rounded-full animate-spin"></div>
-          <p className="text-white font-sans text-sm font-bold animate-pulse">กำลังอัปโหลดไฟล์สัญญาเช่าต้นฉบับจริงไปยัง Google Drive...</p>
-          <p className="text-white/70 font-sans text-xs">ระบบกำลังประมวลผลความปลอดภัยและสิทธิ์การเข้าถึงไฟล์สาธารณะ กรุณาอย่าปิดหน้านี้</p>
+          <p className="text-white font-sans text-sm font-bold animate-pulse">กำลังอัปโหลดไฟล์สัญญาเช่าต้นฉบับจริงไปยังระบบจัดเก็บข้อมูล...</p>
+          <p className="text-white/70 font-sans text-xs">ระบบกำลังบันทึกไฟล์และเตรียมลิงก์เปิดดูออนไลน์สำหรับทุกเบราว์เซอร์ กรุณาอย่าปิดหน้านี้</p>
         </div>
       )}
       {/* Top Section Header */}

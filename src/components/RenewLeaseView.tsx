@@ -3,6 +3,7 @@ import { User } from 'firebase/auth';
 import { Branch } from '../types';
 import { generateNextContractNumber } from './BranchFormView';
 import { initAuth, googleSignIn, uploadFileToDrive } from '../lib/drive';
+import { uploadFileToFirebaseStorage } from '../lib/firebase';
 
 interface RenewLeaseViewProps {
   branches: Branch[];
@@ -227,32 +228,16 @@ export default function RenewLeaseView({
     let finalPdfUrl = pdfUrl;
     let finalFileName = simulatedFileName || `สัญญาเช่าพื้นที่_${selectedBranch?.name || ''}_ต่ออายุ_${newContractNumber}.pdf`;
 
-    // Server File Upload Logic
+    // Firebase Storage File Upload Logic
     if (attachedFile) {
       setIsUploading(true);
       try {
-        const formData = new FormData();
-        formData.append('file', attachedFile);
-        
-        const uploadRes = await fetch('/api/upload', {
-          method: 'POST',
-          body: formData,
-        });
-        
-        if (!uploadRes.ok) {
-          const errData = await uploadRes.json().catch(() => ({}));
-          throw new Error(errData.error || 'การอัปโหลดไฟล์ไปยังเซิร์ฟเวอร์ล้มเหลว');
-        }
-        
-        const uploadResult = await uploadRes.json();
-        if (uploadResult.success) {
-          finalPdfUrl = uploadResult.fileUrl;
-          finalFileName = uploadResult.fileName;
-        } else {
-          throw new Error(uploadResult.error || 'การอัปโหลดไฟล์ล้มเหลว');
-        }
+        const uploadName = simulatedFileName || `สัญญาเช่าพื้นที่_${selectedBranch?.name || ''}_ต่ออายุ_${newContractNumber}.pdf`;
+        const downloadUrl = await uploadFileToFirebaseStorage(attachedFile, uploadName);
+        finalPdfUrl = downloadUrl;
+        finalFileName = uploadName;
       } catch (uploadError: any) {
-        console.error('Failed to upload file to Server:', uploadError);
+        console.error('Failed to upload file to Firebase Storage:', uploadError);
         alert(`เกิดข้อผิดพลาดในการอัปโหลดไฟล์สัญญาเช่า: ${uploadError.message || uploadError}`);
         setIsUploading(false);
         return;
@@ -281,8 +266,8 @@ export default function RenewLeaseView({
       {isUploading && (
         <div className="fixed inset-0 bg-black/60 z-[9999] flex flex-col items-center justify-center gap-3">
           <div className="w-12 h-12 border-4 border-white/25 border-t-white rounded-full animate-spin"></div>
-          <p className="text-white font-sans text-sm font-bold animate-pulse">กำลังอัปโหลดไฟล์สัญญาต่ออายุเช่าจริงไปยัง Google Drive...</p>
-          <p className="text-white/70 font-sans text-xs">ระบบกำลังบันทึกเอกสารต้นฉบับและกำหนดสิทธิ์เข้าถึงสาธารณะ กรุณาอย่าปิดหน้านี้</p>
+          <p className="text-white font-sans text-sm font-bold animate-pulse">กำลังอัปโหลดไฟล์สัญญาต่ออายุเช่าจริงไปยังระบบจัดเก็บข้อมูล...</p>
+          <p className="text-white/70 font-sans text-xs">ระบบกำลังบันทึกไฟล์และเตรียมลิงก์เปิดดูออนไลน์สำหรับทุกเบราว์เซอร์ กรุณาอย่าปิดหน้านี้</p>
         </div>
       )}
       {/* Page Header */}
