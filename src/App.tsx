@@ -33,6 +33,18 @@ enum OperationType {
   WRITE = 'write',
 }
 
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number = 15000): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) =>
+      setTimeout(
+        () => reject(new Error('เชื่อมต่อฐานข้อมูลล่าช้าหรือหมดเวลา (Database Timeout) กรุณาตรวจสอบการตั้งค่าอินเทอร์เน็ตหรือเครือข่ายของท่าน')),
+        timeoutMs
+      )
+    )
+  ]);
+}
+
 function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
   console.error(`Firestore error during ${operationType} on ${path || 'unknown path'}:`, error);
   throw new Error(`การเชื่อมต่อฐานข้อมูลล้มเหลว (${operationType}): ${error instanceof Error ? error.message : String(error)}`);
@@ -40,8 +52,22 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
 
 export default function App() {
   // Core application states
-  const [branches, setBranches] = useState<Branch[]>([]);
-  const [logs, setLogs] = useState<AuditLog[]>([]);
+  const [branches, setBranches] = useState<Branch[]>(() => {
+    try {
+      const saved = localStorage.getItem('stl_branches');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [logs, setLogs] = useState<AuditLog[]>(() => {
+    try {
+      const saved = localStorage.getItem('stl_logs');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
 
   // Role & security authorization states
   const [userRole, setUserRole] = useState<'admin' | 'visitor' | 'super_admin'>(() => {
@@ -125,6 +151,7 @@ export default function App() {
   // Form states
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [branchToEdit, setBranchToEdit] = useState<Branch | undefined>(undefined);
+  const [isSaving, setIsSaving] = useState(false);
 
   // Global search query
   const [searchQuery, setSearchQuery] = useState('');
@@ -154,6 +181,7 @@ export default function App() {
         // Sort branches by ID so they are shown in order
         branchesList.sort((a, b) => a.id.localeCompare(b.id));
         setBranches(branchesList);
+        localStorage.setItem('stl_branches', JSON.stringify(branchesList));
       }, (error) => {
         console.error("Firestore branches onSnapshot error:", error);
       });
@@ -174,6 +202,7 @@ export default function App() {
           return b.id.localeCompare(a.id);
         });
         setLogs(logsList);
+        localStorage.setItem('stl_logs', JSON.stringify(logsList));
       }, (error) => {
         console.error("Firestore logs onSnapshot error:", error);
       });
@@ -380,13 +409,31 @@ export default function App() {
       `ต่อสัญญาเช่าสาขา ${targetBranch.name} (${targetBranch.id}) ด้วยสัญญาใหม่เลขที่ ${newContractNumber} (เริ่มสัญญา ${newStartDate} ถึง ${newEndDate}) แนบสัญญาใหม่: ${fileName}`
     );
 
+    setIsSaving(true);
+    let savedToCloud = false;
     try {
-      await setDoc(doc(db, 'branches', branchId), updatedBranch);
-      await setDoc(doc(db, 'logs', newLog.id), newLog);
+      await withTimeout(setDoc(doc(db, 'branches', branchId), updatedBranch), 5000);
+      await withTimeout(setDoc(doc(db, 'logs', newLog.id), newLog), 5000);
+      savedToCloud = true;
     } catch (error) {
-      console.error("Firestore error renewing lease:", error);
-      alert(`ไม่สามารถต่อสัญญาได้เนื่องจากปัญหาการเชื่อมต่อฐานข้อมูล: ${error instanceof Error ? error.message : String(error)}`);
-      return;
+      console.warn("Firestore error renewing lease, falling back to local update:", error);
+    }
+
+    // Always update local React state and localStorage so the UI stays up-to-date instantly!
+    const updatedList = branches.map((b) => (b.id === branchId ? updatedBranch : b));
+    setBranches(updatedList);
+    localStorage.setItem('stl_branches', JSON.stringify(updatedList));
+
+    const updatedLogs = [newLog, ...logs];
+    setLogs(updatedLogs);
+    localStorage.setItem('stl_logs', JSON.stringify(updatedLogs));
+
+    setIsSaving(false);
+
+    if (savedToCloud) {
+      alert('ต่อสัญญาเช่าเรียบร้อยแล้ว');
+    } else {
+      alert('ต่อสัญญาเช่าสำเร็จในอุปกรณ์เครื่องนี้แล้ว (โหมดออฟไลน์/โลคอล)\n\n*หมายเหตุ: เนื่องจากระบบตรวจพบว่าการเชื่อมต่อฐานข้อมูลคลาวด์ล่าช้าหรือไม่มีสิทธิ์การเข้าถึงภายนอก (Database Timeout)*');
     }
 
     setRenewBranchId(null);
@@ -405,13 +452,31 @@ export default function App() {
       `ลบสาขา ${targetBranch.name} (${targetBranch.id}) ออกจากฐานข้อมูลระบบ`
     );
 
+    setIsSaving(true);
+    let deletedFromCloud = false;
     try {
-      await deleteDoc(doc(db, 'branches', id));
-      await setDoc(doc(db, 'logs', newLog.id), newLog);
+      await withTimeout(deleteDoc(doc(db, 'branches', id)), 5000);
+      await withTimeout(setDoc(doc(db, 'logs', newLog.id), newLog), 5000);
+      deletedFromCloud = true;
     } catch (error) {
-      console.error("Firestore error deleting branch:", error);
-      alert(`ไม่สามารถลบข้อมูลสาขาได้เนื่องจากปัญหาการเชื่อมต่อฐานข้อมูล: ${error instanceof Error ? error.message : String(error)}`);
-      return;
+      console.warn("Firestore error deleting branch, falling back to local update:", error);
+    }
+
+    // Always update local React state and localStorage so the UI stays up-to-date instantly!
+    const updatedList = branches.filter((b) => b.id !== id);
+    setBranches(updatedList);
+    localStorage.setItem('stl_branches', JSON.stringify(updatedList));
+
+    const updatedLogs = [newLog, ...logs];
+    setLogs(updatedLogs);
+    localStorage.setItem('stl_logs', JSON.stringify(updatedLogs));
+
+    setIsSaving(false);
+
+    if (deletedFromCloud) {
+      alert('ลบสาขาสำเร็จเรียบร้อยแล้ว');
+    } else {
+      alert('ลบข้อมูลสาขาสำเร็จในอุปกรณ์เครื่องนี้แล้ว (โหมดออฟไลน์/โลคอล)\n\n*หมายเหตุ: เนื่องจากระบบตรวจพบว่าการเชื่อมต่อฐานข้อมูลคลาวด์ล่าช้าหรือไม่มีสิทธิ์การเข้าถึงภายนอก (Database Timeout)*');
     }
 
     handleViewChange('branches');
@@ -541,17 +606,41 @@ export default function App() {
       );
     }
 
+    setIsSaving(true);
+    let savedToCloud = false;
     try {
-      await setDoc(doc(db, 'branches', branchData.id), branchData);
-      await setDoc(doc(db, 'logs', newLog.id), newLog);
+      await withTimeout(setDoc(doc(db, 'branches', branchData.id), branchData), 5000);
+      await withTimeout(setDoc(doc(db, 'logs', newLog.id), newLog), 5000);
+      savedToCloud = true;
     } catch (error) {
-      console.error("Firestore error saving branch:", error);
-      alert(`ไม่สามารถบันทึกข้อมูลได้เนื่องจากปัญหาการเชื่อมต่อฐานข้อมูล: ${error instanceof Error ? error.message : String(error)}`);
-      return;
+      console.warn("Firestore error saving branch, falling back to local update:", error);
     }
 
+    // Always update local React state and localStorage so the UI stays up-to-date instantly!
+    const isEditing = branches.some((b) => b.id === branchData.id);
+    let updatedList: Branch[];
+    if (isEditing) {
+      updatedList = branches.map((b) => (b.id === branchData.id ? branchData : b));
+    } else {
+      updatedList = [...branches, branchData].sort((a, b) => a.id.localeCompare(b.id));
+    }
+    setBranches(updatedList);
+    localStorage.setItem('stl_branches', JSON.stringify(updatedList));
+
+    const updatedLogs = [newLog, ...logs];
+    setLogs(updatedLogs);
+    localStorage.setItem('stl_logs', JSON.stringify(updatedLogs));
+
+    setIsSaving(false);
     setIsFormOpen(false);
     setBranchToEdit(undefined);
+
+    if (savedToCloud) {
+      alert('บันทึกข้อมูลสาขาและสัญญาเช่าเรียบร้อยแล้ว');
+    } else {
+      alert('บันทึกข้อมูลสาขาและสัญญาเช่าสำเร็จในอุปกรณ์เครื่องนี้แล้ว (โหมดออฟไลน์/โลคอล)\n\n*หมายเหตุ: เนื่องจากระบบตรวจพบว่าการเชื่อมต่อฐานข้อมูลคลาวด์ล่าช้าหรือไม่มีสิทธิ์การเข้าถึงภายนอก (Database Timeout)*');
+    }
+
     handleSelectBranch(branchData.id); // View details of saved branch immediately!
   };
 
@@ -786,6 +875,16 @@ export default function App() {
               onAddLease={handleRenewBranchClick}
               userRole={userRole}
               onVerifyAction={verifyAction}
+              onUpdateBranch={(updatedBranch, newLog) => {
+                const updatedList = branches.map(b => b.id === updatedBranch.id ? updatedBranch : b);
+                setBranches(updatedList);
+                localStorage.setItem('stl_branches', JSON.stringify(updatedList));
+                if (newLog) {
+                  const updatedLogs = [newLog, ...logs];
+                  setLogs(updatedLogs);
+                  localStorage.setItem('stl_logs', JSON.stringify(updatedLogs));
+                }
+              }}
             />
           );
         }
@@ -894,6 +993,15 @@ export default function App() {
         onClose={() => setIsLoginOpen(false)}
         onLoginSuccess={handleLoginSuccess}
       />
+
+      {/* Global Saving Spinner Overlay */}
+      {isSaving && (
+        <div className="fixed inset-0 bg-black/60 z-[9999] flex flex-col items-center justify-center gap-3">
+          <div className="w-12 h-12 border-4 border-white/25 border-t-white rounded-full animate-spin"></div>
+          <p className="text-white font-sans text-sm font-bold animate-pulse">กำลังบันทึกข้อมูลและซิงค์ฐานข้อมูล...</p>
+          <p className="text-white/70 font-sans text-xs">กรุณาอย่าปิดหน้านี้ ระบบกำลังทำรายการอย่างปลอดภัย</p>
+        </div>
+      )}
     </div>
   );
 }

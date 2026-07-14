@@ -19,18 +19,17 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 
-// Detect if we are running in the AI Studio development/preview sandbox environment or localhost.
-// If yes, we use the custom sandboxed database ID. 
-// If no (running in production such as on Vercel), we fall back to the standard "(default)" database ID.
-const isDevPreview = typeof window !== 'undefined' && (
-  window.location.hostname.includes('run.app') || 
-  window.location.hostname.includes('localhost') || 
-  window.location.hostname.includes('127.0.0.1')
-);
+// We determine the Firestore Database ID dynamically:
+// 1. If VITE_FIRESTORE_DATABASE_ID is explicitly set in environment variables, we use it.
+// 2. If we are using the default AI Studio Project ID ("gen-lang-client-0334181774"), we MUST use the custom database ID
+//    regardless of where the app is hosted (AI Studio preview or external sites like Vercel) because the database with
+//    all the branches/rules lives under this custom database name.
+// 3. If a custom Project ID is provided, we default to the standard "(default)" database.
+const activeProjectId = env.VITE_FIREBASE_PROJECT_ID || "gen-lang-client-0334181774";
 
 const databaseId = env.VITE_FIRESTORE_DATABASE_ID || (
-  isDevPreview 
-    ? "ai-studio-stlleasemanageme-8bd1ac69-01b5-4826-ad17-0e92f42dcabf" 
+  activeProjectId === "gen-lang-client-0334181774"
+    ? "ai-studio-stlleasemanageme-8bd1ac69-01b5-4826-ad17-0e92f42dcabf"
     : "(default)"
 );
 

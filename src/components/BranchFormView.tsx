@@ -323,10 +323,12 @@ export default function BranchFormView({
         finalPdfUrl = downloadUrl;
         finalPdfName = uploadName;
       } catch (uploadError: any) {
-        console.error('Failed to upload file to Firestore:', uploadError);
-        alert(`เกิดข้อผิดพลาดในการอัปโหลดไฟล์สัญญาเช่า: ${uploadError.message || uploadError}`);
-        setIsUploading(false);
-        return;
+        console.warn('Failed to upload file to Firestore, falling back to local Object URL:', uploadError);
+        // Fallback to local Object URL so the save can proceed!
+        finalPdfUrl = URL.createObjectURL(attachedFile);
+        finalPdfName = simulatedFileName || `สัญญาเช่าจริง_${name.trim()}_${contractNumber.trim()}.pdf`;
+        
+        alert(`ระบบตรวจพบการเชื่อมต่อฐานข้อมูลคลาวด์ล่าช้าหรือไม่มีสิทธิ์อัปโหลดไฟล์ (Timeout)\n\nระบบจะจำลองใช้ไฟล์แบบโลคอลชั่วคราวแทนเพื่อให้ท่านสามารถกรอกข้อมูลอื่นเสร็จสิ้นและเปิดตัวอย่าง PDF ได้ในเบราว์เซอร์เซสชันนี้!`);
       }
       setIsUploading(false);
     }
@@ -1038,7 +1040,7 @@ export default function BranchFormView({
             <div className="bg-white border border-outline-variant rounded-lg p-5 shadow-sm flex flex-col gap-4">
               <h3 className="text-sm font-bold text-primary uppercase tracking-wider border-b border-outline-variant pb-2 flex items-center gap-2 font-display">
                 <span className="material-symbols-outlined text-primary text-xl">upload_file</span>
-                แนบไฟล์สำเนาสัญญาจริง
+                แนบไฟล์สำเนาสัญญาจริง (ไม่บังคับ - สามารถแนบเพิ่มภายหลังได้)
               </h3>
 
               <div className="flex flex-col gap-4 text-xs">
@@ -1082,10 +1084,23 @@ export default function BranchFormView({
                       <p className="text-[10px] text-secondary">
                         {attachedFile ? `${(attachedFile.size / (1024 * 1024)).toFixed(2)} MB (พร้อมอัปโหลดเซิร์ฟเวอร์)` : 'ไฟล์ต้นฉบับเดิม'}
                       </p>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setAttachedFile(null);
+                          setSimulatedFileName('');
+                          setPdfUrl(null);
+                        }}
+                        className="mt-2 px-3 py-1 bg-red-50 hover:bg-red-100 text-red-600 rounded text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-colors border border-red-200"
+                      >
+                        <span className="material-symbols-outlined text-[14px]">delete</span>
+                        ลบไฟล์ที่เลือก
+                      </button>
                     </div>
                   ) : (
                     <div>
-                      <p className="text-xs font-bold text-on-surface">ลากไฟล์ PDF สัญญาเช่ามาวาง หรือคลิกที่นี่</p>
+                      <p className="text-xs font-bold text-on-surface">ลากไฟล์ PDF สัญญาเช่ามาวาง หรือคลิกที่นี่ (ไม่บังคับ)</p>
                       <p className="text-[10px] text-secondary mt-1">ไฟล์จะถูกจัดเก็บไว้บนเซิร์ฟเวอร์หลักของระบบและสามารถเปิดดูออนไลน์ได้ทันที</p>
                     </div>
                   )}

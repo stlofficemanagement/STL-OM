@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Branch } from '../types';
-import { downloadFileFromFirestore } from '../lib/fileStorage';
+import { Branch, Lease, AuditLog } from '../types';
+import { downloadFileFromFirestore, uploadFileToFirestore } from '../lib/fileStorage';
+import { db } from '../lib/firebase';
+import { doc, setDoc } from 'firebase/firestore';
 
 interface BranchDetailsViewProps {
   branch: Branch;
@@ -9,6 +11,7 @@ interface BranchDetailsViewProps {
   onAddLease: (id: string) => void;
   userRole: 'admin' | 'visitor' | 'super_admin';
   onVerifyAction: (actionName: string) => boolean;
+  onUpdateBranch?: (updatedBranch: Branch, newLog?: AuditLog) => void;
 }
 
 export default function BranchDetailsView({
@@ -18,6 +21,7 @@ export default function BranchDetailsView({
   onAddLease,
   userRole,
   onVerifyAction,
+  onUpdateBranch,
 }: BranchDetailsViewProps) {
   // Tabs: overview, leases, documents, history
   const [activeTab, setActiveTab] = useState<'overview' | 'leases' | 'documents' | 'history'>('overview');
@@ -28,6 +32,38 @@ export default function BranchDetailsView({
 
   const [loadedPdfUrl, setLoadedPdfUrl] = useState<string | null>(null);
   const [isLoadingPdf, setIsLoadingPdf] = useState(false);
+
+  // Edit Contract States
+  const [isEditContractOpen, setIsEditContractOpen] = useState(false);
+  const [contractNumber, setContractNumber] = useState('');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [rent, setRent] = useState(0);
+  const [deposit, setDeposit] = useState(0);
+  const [depositRef, setDepositRef] = useState('');
+  const [advanceRent, setAdvanceRent] = useState(0);
+  const [advanceRentRef, setAdvanceRentRef] = useState('');
+  const [noticePeriod, setNoticePeriod] = useState<string | number>(90);
+  const [attachedFile, setAttachedFile] = useState<File | null>(null);
+  const [simulatedFileName, setSimulatedFileName] = useState('');
+  const [isUploading, setIsUploading] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+
+  useEffect(() => {
+    if (branch) {
+      setContractNumber(branch.contractNumber || '');
+      setStartDate(branch.startDate || '');
+      setEndDate(branch.endDate || '');
+      setRent(branch.rent || 0);
+      setDeposit(branch.deposit || 0);
+      setDepositRef(branch.depositRef || '');
+      setAdvanceRent(branch.advanceRent || 0);
+      setAdvanceRentRef(branch.advanceRentRef || '');
+      setNoticePeriod(branch.noticePeriod || 90);
+      setAttachedFile(null);
+      setSimulatedFileName(branch.pdfFile || '');
+    }
+  }, [branch, isEditContractOpen]);
 
   // Local logs for this branch
   const recentNotes = [
@@ -248,6 +284,237 @@ export default function BranchDetailsView({
     setIsPdfViewerOpen(true);
   };
 
+  // Drag & drop handlers for contract upload inside details view modal
+  const handleDetailsDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDetailsDragLeave = () => {
+    setIsDragging(false);
+  };
+
+  const handleDetailsDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      const file = e.dataTransfer.files[0];
+      setAttachedFile(file);
+      setSimulatedFileName(file.name);
+    }
+  };
+
+  const handleDetailsFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      setAttachedFile(file);
+      setSimulatedFileName(file.name);
+    }
+  };
+
+  const handleSaveContractSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!onVerifyAction('แก้ไขรายละเอียดสัญญา')) {
+      return;
+    }
+
+    if (!contractNumber.trim()) {
+      alert('กรุณากรอกเลขที่สัญญา');
+      return;
+    }
+
+    let finalPdfUrl = simulatedFileName ? (branch.pdfUrl || '') : '';
+    let finalPdfName = simulatedFileName ? (branch.pdfFile || '') : '';
+
+    setIsUploading(true);
+
+    try {
+      if (attachedFile) {
+        try {
+          const downloadUrl = await uploadFileToFirestore(attachedFile);
+          finalPdfUrl = downloadUrl;
+          finalPdfName = attachedFile.name;
+        } catch (uploadError) {
+          console.warn("File upload to Firestore failed/timed out, falling back to local Object URL:", uploadError);
+          finalPdfUrl = URL.createObjectURL(attachedFile);
+          finalPdfName = attachedFile.name;
+          alert('ระบบไม่สามารถอัปโหลดไฟล์จริงไปยังเซิร์ฟเวอร์คลาวด์ได้ในขณะนี้ (หมดเวลารับส่งข้อมูล)\n\nระบบจึงจำลองการใช้ไฟล์แบบโลคอลชั่วคราวแทน เพื่อให้ท่านสามารถบันทึกข้อมูลและเปิดดูเอกสารออนไลน์ได้ทันทีในเบราว์เซอร์นี้!');
+        }
+      }
+
+      // Prepare updated lease list
+      const updatedLeases = branch.leases ? [...branch.leases] : [];
+      const activeLeaseIdx = updatedLeases.findIndex((l) => l.status === 'Active');
+
+      const updatedActiveLease: Lease = {
+        id: contractNumber.trim(),
+        startDate,
+        endDate,
+        rent: Number(rent) || 0,
+        deposit: Number(deposit) || 0,
+        depositRef: depositRef.trim(),
+        advanceRent: Number(advanceRent) || 0,
+        advanceRentRef: advanceRentRef.trim(),
+        noticePeriod: noticePeriod || 90,
+        status: 'Active',
+        pdfUrl: finalPdfUrl || undefined,
+        pdfName: finalPdfName || undefined
+      };
+
+      if (activeLeaseIdx >= 0) {
+        updatedLeases[activeLeaseIdx] = updatedActiveLease;
+      } else {
+        updatedLeases.unshift(updatedActiveLease);
+      }
+
+      // Documents list
+      const updatedDocList = branch.documents ? [...branch.documents] : [];
+      if (attachedFile && finalPdfName) {
+        const hasDoc = updatedDocList.some(d => d.name === finalPdfName);
+        if (!hasDoc) {
+          updatedDocList.unshift({
+            name: finalPdfName,
+            size: `${(attachedFile.size / (1024 * 1024)).toFixed(1)} MB`,
+            date: new Date().toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' })
+          });
+        }
+      }
+
+      // Track changes
+      const changesList: string[] = [];
+      const fieldLabels: { [key: string]: string } = {
+        contractNumber: "เลขที่สัญญา",
+        startDate: "วันเริ่มสัญญาเช่า",
+        endDate: "วันสิ้นสุดสัญญาเช่า",
+        rent: "ค่าเช่าต่อเดือน",
+        deposit: "เงินประกันสัญญา",
+        depositRef: "เลขที่อ้างอิงเงินประกันสัญญา",
+        advanceRent: "ค่าเช่าล่วงหน้า",
+        advanceRentRef: "เลขที่อ้างอิงค่าเช่าล่วงหน้า",
+        noticePeriod: "ระยะเวลาแจ้งบอกเลิกสัญญาล่วงหน้า"
+      };
+
+      const oldVals: any = {
+        contractNumber: branch.contractNumber,
+        startDate: branch.startDate,
+        endDate: branch.endDate,
+        rent: branch.rent,
+        deposit: branch.deposit,
+        depositRef: branch.depositRef,
+        advanceRent: branch.advanceRent,
+        advanceRentRef: branch.advanceRentRef,
+        noticePeriod: branch.noticePeriod
+      };
+
+      const newVals: any = {
+        contractNumber: contractNumber.trim(),
+        startDate,
+        endDate,
+        rent: Number(rent) || 0,
+        deposit: Number(deposit) || 0,
+        depositRef: depositRef.trim(),
+        advanceRent: Number(advanceRent) || 0,
+        advanceRentRef: advanceRentRef.trim(),
+        noticePeriod: noticePeriod || 90
+      };
+
+      Object.keys(fieldLabels).forEach((key) => {
+        const oldVal = oldVals[key];
+        const newVal = newVals[key];
+        if (oldVal !== newVal) {
+          let oldString = oldVal !== undefined && oldVal !== null ? String(oldVal) : "ไม่มีข้อมูล";
+          let newString = newVal !== undefined && newVal !== null ? String(newVal) : "ไม่มีข้อมูล";
+
+          if (['rent', 'deposit', 'advanceRent'].includes(key)) {
+            oldString = `฿${(Number(oldVal) || 0).toLocaleString()}`;
+            newString = `฿${(Number(newVal) || 0).toLocaleString()}`;
+          }
+          changesList.push(`• **${fieldLabels[key]}**: เปลี่ยนจาก "${oldString}" เป็น "${newString}"`);
+        }
+      });
+
+      if (attachedFile) {
+        changesList.push(`• **ไฟล์แนบสัญญา**: แนบไฟล์สัญญาเช่าจริงใหม่ "${finalPdfName}"`);
+      } else if (branch.pdfFile && !simulatedFileName) {
+        changesList.push(`• **ไฟล์แนบสัญญา**: ลบไฟล์แนบสัญญาเดิมออก`);
+      }
+
+      const changesText = changesList.length > 0 ? changesList.join("\n") : "แก้ไขรายละเอียดและอัปเดตไฟล์แนบสัญญาเช่า";
+
+      const historyItem = {
+        id: `HIST-${Date.now()}`,
+        dateTime: new Date().toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+        user: userRole === 'super_admin' ? 'Super Admin (Officemanagement)' : 'Admin System',
+        description: `แก้ไขรายละเอียดสัญญาเช่า (Active Contract)`,
+        changes: changesText
+      };
+
+      const updatedBranch: Branch = {
+        ...branch,
+        contractNumber: contractNumber.trim(),
+        startDate,
+        endDate,
+        rent: Number(rent) || 0,
+        deposit: Number(deposit) || 0,
+        depositRef: depositRef.trim(),
+        advanceRent: Number(advanceRent) || 0,
+        advanceRentRef: advanceRentRef.trim(),
+        noticePeriod: noticePeriod || 90,
+        pdfFile: finalPdfName || undefined,
+        pdfUrl: finalPdfUrl || undefined,
+        leases: updatedLeases,
+        documents: updatedDocList,
+        editHistory: branch.editHistory ? [historyItem, ...branch.editHistory] : [historyItem]
+      };
+
+      const logId = `LOG-${Date.now()}`;
+      const newLog = {
+        id: logId,
+        dateTime: new Date().toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+        user: userRole === 'super_admin' ? 'Officemanagement' : 'Admin System',
+        userInitial: (userRole === 'super_admin' ? 'O' : 'A'),
+        action: 'EditContract',
+        target: `Branch: ${branch.name}`,
+        description: `แก้ไขรายละเอียดพารามิเตอร์สัญญาเช่าและอัปเดตไฟล์แนบสาขา ${branch.name} (${branch.id})`
+      };
+
+      // Direct write to Firestore with a quick 5-second timeout so the UI is highly responsive!
+      let savedToCloud = false;
+      try {
+        await Promise.race([
+          setDoc(doc(db, 'branches', branch.id), updatedBranch),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Firestore Timeout')), 5000))
+        ]);
+
+        await Promise.race([
+          setDoc(doc(db, 'logs', logId), newLog),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Firestore Timeout')), 5000))
+        ]);
+        savedToCloud = true;
+      } catch (saveError: any) {
+        console.warn('Failed to save updated contract to Firestore. Falling back to local state:', saveError);
+      }
+
+      // Always update local states via the parent handler so the data is instantly synchronized in the UI!
+      if (onUpdateBranch) {
+        onUpdateBranch(updatedBranch, newLog);
+      }
+
+      if (savedToCloud) {
+        alert('บันทึกรายละเอียดสัญญาเช่าเรียบร้อยแล้ว');
+      } else {
+        alert('บันทึกรายละเอียดสัญญาเช่าสำเร็จในอุปกรณ์เครื่องนี้แล้ว (โหมดออฟไลน์/โลคอล)\n\n*หมายเหตุ: เนื่องจากระบบตรวจพบว่าการเชื่อมต่อฐานข้อมูลคลาวด์ล่าช้าหรือไม่มีสิทธิ์การเข้าถึงภายนอก (Database Timeout)*');
+      }
+      setIsEditContractOpen(false);
+    } catch (saveError: any) {
+      console.error('Failed to process updated contract branch:', saveError);
+      alert(`เกิดข้อผิดพลาดในการบันทึกข้อมูล: ${saveError.message || saveError}`);
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-6" id="branch-details-container">
       {/* Breadcrumb Navigation Header */}
@@ -322,7 +589,29 @@ export default function BranchDetailsView({
             className="bg-white hover:bg-surface-container border border-outline-variant text-on-surface text-xs font-semibold py-2 px-4 rounded transition-colors flex items-center gap-2 shadow-sm cursor-pointer"
           >
             <span className="material-symbols-outlined text-[18px]">edit</span>
-            แก้ไขข้อมูล
+            แก้ไขข้อมูลสาขา
+          </button>
+          <button
+            onClick={() => {
+              if (onVerifyAction('แก้ไขรายละเอียดสัญญา')) {
+                setContractNumber(branch.contractNumber || '');
+                setStartDate(branch.startDate || '');
+                setEndDate(branch.endDate || '');
+                setRent(branch.rent || 0);
+                setDeposit(branch.deposit || 0);
+                setDepositRef(branch.depositRef || '');
+                setAdvanceRent(branch.advanceRent || 0);
+                setAdvanceRentRef(branch.advanceRentRef || '');
+                setNoticePeriod(branch.noticePeriod || 90);
+                setAttachedFile(null);
+                setSimulatedFileName(branch.pdfFile || '');
+                setIsEditContractOpen(true);
+              }
+            }}
+            className="bg-white hover:bg-[#edf5ff] hover:text-primary hover:border-primary/50 border border-outline-variant text-on-surface text-xs font-semibold py-2 px-4 rounded transition-colors flex items-center gap-2 shadow-sm cursor-pointer animate-pulse-subtle"
+          >
+            <span className="material-symbols-outlined text-[18px] text-primary">edit_document</span>
+            แก้ไขรายละเอียด/แนบไฟล์สัญญา
           </button>
           <button
             onClick={() => {
@@ -332,7 +621,7 @@ export default function BranchDetailsView({
             }}
             className="bg-primary hover:bg-primary/95 text-white text-xs font-semibold py-2 px-4 rounded transition-colors shadow-sm cursor-pointer"
           >
-            เพิ่มสัญญาเช่า
+            เพิ่มสัญญาเช่า (ต่อสัญญา)
           </button>
         </div>
       </div>
@@ -635,16 +924,44 @@ export default function BranchDetailsView({
                 </div>
 
                 {/* PDF Lease Attachment Action */}
-                <button
-                  onClick={() => handleOpenPdf()}
-                  className="w-full flex items-center justify-between p-3 rounded border border-[#c2e7ff] bg-[#f4f8ff] text-[#1a73e8] hover:bg-[#e8f0fe] hover:border-[#1a73e8]/30 transition-all text-xs font-semibold group cursor-pointer"
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="material-symbols-outlined text-red-500 text-[18px]">picture_as_pdf</span>
-                    <span>ดูสำเนาสัญญาเช่า PDF</span>
-                  </div>
-                  <span className="material-symbols-outlined text-[16px] group-hover:translate-x-0.5 transition-transform">arrow_forward</span>
-                </button>
+                {!branch.pdfFile ? (
+                  <button
+                    onClick={() => {
+                      if (onVerifyAction('แก้ไขรายละเอียดสัญญา')) {
+                        setContractNumber(branch.contractNumber || '');
+                        setStartDate(branch.startDate || '');
+                        setEndDate(branch.endDate || '');
+                        setRent(branch.rent || 0);
+                        setDeposit(branch.deposit || 0);
+                        setDepositRef(branch.depositRef || '');
+                        setAdvanceRent(branch.advanceRent || 0);
+                        setAdvanceRentRef(branch.advanceRentRef || '');
+                        setNoticePeriod(branch.noticePeriod || 90);
+                        setAttachedFile(null);
+                        setSimulatedFileName(branch.pdfFile || '');
+                        setIsEditContractOpen(true);
+                      }
+                    }}
+                    className="w-full flex items-center justify-between p-3 rounded border border-dashed border-amber-400 bg-amber-50 hover:bg-amber-100/60 text-amber-800 transition-all text-xs font-bold group cursor-pointer animate-pulse-subtle"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="material-symbols-outlined text-amber-600 text-[18px]">add_circle</span>
+                      <span>ไม่มีไฟล์สัญญา (คลิกแนบสัญญาเพิ่ม)</span>
+                    </div>
+                    <span className="material-symbols-outlined text-[16px] group-hover:translate-x-0.5 transition-transform">upload_file</span>
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => handleOpenPdf()}
+                    className="w-full flex items-center justify-between p-3 rounded border border-[#c2e7ff] bg-[#f4f8ff] text-[#1a73e8] hover:bg-[#e8f0fe] hover:border-[#1a73e8]/30 transition-all text-xs font-semibold group cursor-pointer"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="material-symbols-outlined text-red-500 text-[18px]">picture_as_pdf</span>
+                      <span className="truncate max-w-[190px]">ดูสัญญา PDF: {branch.pdfFile}</span>
+                    </div>
+                    <span className="material-symbols-outlined text-[16px] group-hover:translate-x-0.5 transition-transform">arrow_forward</span>
+                  </button>
+                )}
 
                 <div className="p-4 rounded border border-[#ffe066] bg-[#fffbf0] flex flex-col gap-1 shadow-sm">
                   <p className="text-xs text-secondary font-semibold">ค่าเช่าต่อเดือน (บาท)</p>
@@ -1371,6 +1688,257 @@ export default function BranchDetailsView({
         </div>
         );
       })()}
+
+      {/* Edit Contract Details / Attach File Modal Dialog */}
+      {isEditContractOpen && (
+        <div className="fixed inset-0 bg-black/60 z-[999] flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white border border-outline-variant rounded-xl shadow-2xl max-w-2xl w-full flex flex-col max-h-[90vh] overflow-hidden animate-scale-up">
+            {/* Modal Header */}
+            <div className="px-6 py-4 bg-primary text-white flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined">edit_document</span>
+                <div>
+                  <h3 className="font-display font-bold text-sm">แก้ไขรายละเอียด & แนบไฟล์สัญญาเช่าจริง</h3>
+                  <p className="text-[11px] text-white/85">สาขา {branch.name} ({branch.id})</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsEditContractOpen(false)}
+                className="text-white/80 hover:text-white transition-colors cursor-pointer"
+                disabled={isUploading}
+              >
+                <span className="material-symbols-outlined text-2xl">close</span>
+              </button>
+            </div>
+
+            {/* Modal Form Content */}
+            <form onSubmit={handleSaveContractSubmit} className="flex-1 overflow-y-auto p-6 flex flex-col gap-5">
+              
+              {/* Row 1: Contract Number & Dates */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="text-[11px] font-bold text-secondary uppercase block mb-1">
+                    เลขที่สัญญา <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={contractNumber}
+                    onChange={(e) => setContractNumber(e.target.value)}
+                    placeholder="เช่น SG-BKK-001"
+                    className="w-full px-3 py-2 bg-surface border border-outline-variant rounded text-xs font-semibold outline-none focus:border-primary"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-bold text-secondary uppercase block mb-1">
+                    วันเริ่มสัญญาเช่า
+                  </label>
+                  <input
+                    type="date"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                    className="w-full px-3 py-2 bg-surface border border-outline-variant rounded text-xs font-semibold outline-none focus:border-primary"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-bold text-secondary uppercase block mb-1">
+                    วันสิ้นสุดสัญญาเช่า
+                  </label>
+                  <input
+                    type="date"
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                    className="w-full px-3 py-2 bg-surface border border-outline-variant rounded text-xs font-semibold outline-none focus:border-primary"
+                  />
+                </div>
+              </div>
+
+              {/* Row 2: Rent & Notice Period */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="text-[11px] font-bold text-secondary uppercase block mb-1">
+                    ค่าเช่ารายเดือน (บาท)
+                  </label>
+                  <input
+                    type="number"
+                    value={rent || ''}
+                    onChange={(e) => setRent(Number(e.target.value))}
+                    placeholder="0"
+                    className="w-full px-3 py-2 bg-surface border border-outline-variant rounded text-xs font-semibold outline-none focus:border-primary"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-bold text-secondary uppercase block mb-1">
+                    ระยะเวลาบอกเลิกสัญญาล่วงหน้า (วัน)
+                  </label>
+                  <input
+                    type="number"
+                    value={noticePeriod}
+                    onChange={(e) => setNoticePeriod(Number(e.target.value))}
+                    placeholder="90"
+                    className="w-full px-3 py-2 bg-surface border border-outline-variant rounded text-xs font-semibold outline-none focus:border-primary"
+                  />
+                </div>
+              </div>
+
+              {/* Row 3: Deposit & Deposit Ref */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="text-[11px] font-bold text-secondary uppercase block mb-1">
+                    เงินประกันสัญญา (บาท)
+                  </label>
+                  <input
+                    type="number"
+                    value={deposit || ''}
+                    onChange={(e) => setDeposit(Number(e.target.value))}
+                    placeholder="0"
+                    className="w-full px-3 py-2 bg-surface border border-outline-variant rounded text-xs font-semibold outline-none focus:border-primary"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-bold text-secondary uppercase block mb-1">
+                    เลขที่อ้างอิงเงินประกัน (Ref)
+                  </label>
+                  <input
+                    type="text"
+                    value={depositRef}
+                    onChange={(e) => setDepositRef(e.target.value)}
+                    placeholder="เช่น GL-DEP-001"
+                    className="w-full px-3 py-2 bg-surface border border-outline-variant rounded text-xs font-semibold outline-none focus:border-primary"
+                  />
+                </div>
+              </div>
+
+              {/* Row 4: Advance Rent & Advance Rent Ref */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="text-[11px] font-bold text-secondary uppercase block mb-1">
+                    ค่าเช่าล่วงหน้า (บาท)
+                  </label>
+                  <input
+                    type="number"
+                    value={advanceRent || ''}
+                    onChange={(e) => setAdvanceRent(Number(e.target.value))}
+                    placeholder="0"
+                    className="w-full px-3 py-2 bg-surface border border-outline-variant rounded text-xs font-semibold outline-none focus:border-primary"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-bold text-secondary uppercase block mb-1">
+                    เลขที่อ้างอิงค่าเช่าล่วงหน้า (Ref)
+                  </label>
+                  <input
+                    type="text"
+                    value={advanceRentRef}
+                    onChange={(e) => setAdvanceRentRef(e.target.value)}
+                    placeholder="เช่น GL-ADV-001"
+                    className="w-full px-3 py-2 bg-surface border border-outline-variant rounded text-xs font-semibold outline-none focus:border-primary"
+                  />
+                </div>
+              </div>
+
+              {/* Section 5: File Attachment dropzone */}
+              <div className="flex flex-col gap-2">
+                <label className="text-[11px] font-bold text-secondary uppercase block">
+                  แนบไฟล์สแกนสัญญาเช่าจริง <span className="text-secondary font-normal">(จัดเก็บตรงเซิร์ฟเวอร์ ไม่จำกัดขนาดไฟล์)</span>
+                </label>
+
+                <div
+                  onDragOver={handleDetailsDragOver}
+                  onDragLeave={handleDetailsDragLeave}
+                  onDrop={handleDetailsDrop}
+                  onClick={() => document.getElementById('details-modal-file-input')?.click()}
+                  className={`border-2 border-dashed rounded-lg p-5 text-center flex flex-col items-center justify-center cursor-pointer transition-all ${
+                    isDragging
+                      ? 'border-primary bg-primary-container/10'
+                      : 'border-outline hover:border-primary hover:bg-surface-container-low'
+                  }`}
+                >
+                  <input
+                    id="details-modal-file-input"
+                    type="file"
+                    accept=".pdf"
+                    onChange={handleDetailsFileChange}
+                    className="hidden"
+                  />
+                  <span className="material-symbols-outlined text-3xl text-primary mb-2">
+                    picture_as_pdf
+                  </span>
+                  {simulatedFileName ? (
+                    <div className="flex flex-col items-center gap-1 overflow-hidden w-full">
+                      <p className="text-xs font-bold text-primary truncate max-w-xs">{simulatedFileName}</p>
+                      <p className="text-[10px] text-secondary">
+                        {attachedFile ? `${(attachedFile.size / (1024 * 1024)).toFixed(2)} MB (พร้อมอัปโหลดเซิร์ฟเวอร์)` : 'สัญญาเช่าปัจจุบัน'}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setAttachedFile(null);
+                          setSimulatedFileName('');
+                        }}
+                        className="mt-2 px-3 py-1 bg-red-50 hover:bg-red-100 text-red-600 rounded text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-colors border border-red-200 animate-none"
+                      >
+                        <span className="material-symbols-outlined text-[14px]">delete</span>
+                        ลบไฟล์ที่เลือก
+                      </button>
+                    </div>
+                  ) : (
+                    <div>
+                      <p className="text-xs font-bold text-on-surface">ลากไฟล์ PDF สัญญาเช่ามาวาง หรือคลิกเพื่ออัปโหลดที่นี่</p>
+                      <p className="text-[10px] text-secondary mt-1">ไฟล์จะถูกจัดเก็บโดยตรงในฐานข้อมูลหลักอย่างปลอดภัยสูงสุด</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Save/Status Message */}
+              {isUploading && (
+                <div className="p-3 bg-surface border border-outline-variant rounded-lg flex items-center justify-center gap-2 text-xs font-bold text-primary animate-pulse">
+                  <div className="w-4 h-4 border-2 border-primary/25 border-t-primary rounded-full animate-spin"></div>
+                  <span>กำลังอัปโหลดไฟล์สแกนสัญญาและบันทึกข้อมูลหลัก...</span>
+                </div>
+              )}
+
+              {/* Action Buttons */}
+              <div className="flex items-center justify-end gap-3 mt-4 pt-4 border-t border-outline-variant">
+                <button
+                  type="button"
+                  disabled={isUploading}
+                  onClick={() => setIsEditContractOpen(false)}
+                  className="px-4 py-2 bg-surface hover:bg-surface-container-high border border-outline-variant text-on-surface rounded text-xs font-bold cursor-pointer disabled:opacity-50"
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  type="submit"
+                  disabled={isUploading}
+                  className="px-5 py-2 bg-primary hover:bg-primary/95 text-white rounded text-xs font-bold cursor-pointer shadow-md disabled:opacity-50 flex items-center gap-1.5"
+                >
+                  {isUploading ? (
+                    <>
+                      <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                      <span>กำลังบันทึก...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="material-symbols-outlined text-[16px]">save</span>
+                      <span>บันทึกสัญญาเช่า</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

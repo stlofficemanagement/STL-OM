@@ -558,7 +558,7 @@ export default function RenewLeaseView({
             {/* Drag & Drop File Upload Zone for new Lease Contract with Direct Server Storage */}
             <div className="flex flex-col gap-3">
               <label className="text-[11px] font-bold text-secondary uppercase block">
-                แนบเอกสารสัญญาใหม่ <span className="text-secondary font-normal">(จัดเก็บตรงระบบเซิร์ฟเวอร์ ไม่จำกัดขนาด)</span>
+                แนบเอกสารสัญญาใหม่ (ไม่บังคับ - สามารถแนบเพิ่มภายหลังได้) <span className="text-secondary font-normal">(จัดเก็บตรงระบบเซิร์ฟเวอร์ ไม่จำกัดขนาด)</span>
               </label>
 
               {/* Server Storage Info */}
@@ -611,7 +611,7 @@ export default function RenewLeaseView({
                   </div>
                 ) : (
                   <div>
-                    <p className="text-xs font-bold text-on-surface">ลากไฟล์ PDF สัญญาเช่าใหม่มาวางที่นี่ หรือคลิกเพื่อเลือกไฟล์</p>
+                    <p className="text-xs font-bold text-on-surface">ลากไฟล์ PDF สัญญาเช่าใหม่มาวางที่นี่ หรือคลิกเพื่อเลือกไฟล์ (ไม่บังคับ)</p>
                     <p className="text-[10px] text-secondary mt-1">ไฟล์จะถูกจัดเก็บไว้บนเซิร์ฟเวอร์หลักของระบบอย่างปลอดภัย</p>
                   </div>
                 )}
