@@ -313,65 +313,37 @@ export default function BranchFormView({
     let finalPdfUrl = pdfUrl;
     let finalPdfName = simulatedFileName;
 
-    // Google Drive Upload Logic
+    // Server File Upload Logic
     if (attachedFile) {
-      let useDrive = false;
-      if (!googleToken) {
-        const confirmLogin = window.confirm(
-          'พบไฟล์เอกสารแนบ เพื่อจัดเก็บไฟล์สัญญาระยะยาวไปยัง Google Drive อย่างปลอดภัยตามนโยบาย กรุณาลงชื่อเข้าใช้งานบัญชี Google ของคุณ\n\nต้องการลงชื่อเข้าใช้งานด้วย Google ทันทีหรือไม่?\n(หากไม่สะดวกหรือเข้าสู่ระบบไม่สำเร็จ ท่านยังคงสามารถเลือกบันทึกสัญญาแบบออฟไลน์/ฐานข้อมูลโดยตรงได้)'
-        );
-        if (confirmLogin) {
-          try {
-            const res = await googleSignIn();
-            if (res && res.accessToken) {
-              useDrive = true;
-            } else {
-              const proceedOffline = window.confirm(
-                'การลงชื่อเข้าใช้งาน Google ล้มเหลวหรือถูกยกเลิก\n\nต้องการเปลี่ยนมาบันทึกไฟล์สัญญานี้เก็บในฐานข้อมูลโดยตรงแทนหรือไม่? (แนะนำเป็นไฟล์ขนาดเล็กไม่เกิน 1MB)'
-              );
-              if (!proceedOffline) {
-                return;
-              }
-            }
-          } catch (err) {
-            const proceedOffline = window.confirm(
-              'การลงชื่อเข้าใช้งาน Google ล้มเหลวหรือขัดข้อง\n\nต้องการเปลี่ยนมาบันทึกไฟล์สัญญานี้เก็บในฐานข้อมูลโดยตรงแทนหรือไม่? (แนะนำเป็นไฟล์ขนาดเล็กไม่เกิน 1MB)'
-            );
-            if (!proceedOffline) {
-              return;
-            }
-          }
+      setIsUploading(true);
+      try {
+        const formData = new FormData();
+        formData.append('file', attachedFile);
+        
+        const uploadRes = await fetch('/api/upload', {
+          method: 'POST',
+          body: formData,
+        });
+        
+        if (!uploadRes.ok) {
+          const errData = await uploadRes.json().catch(() => ({}));
+          throw new Error(errData.error || 'การอัปโหลดไฟล์ไปยังเซิร์ฟเวอร์ล้มเหลว');
+        }
+        
+        const uploadResult = await uploadRes.json();
+        if (uploadResult.success) {
+          finalPdfUrl = uploadResult.fileUrl;
+          finalPdfName = uploadResult.fileName;
         } else {
-          const proceedOffline = window.confirm(
-            'ท่านไม่ได้ลงชื่อเข้าใช้งานด้วย Google\n\nต้องการบันทึกไฟล์สัญญานี้เก็บในระบบฐานข้อมูลโดยตรงแทนหรือไม่? (แนะนำเป็นไฟล์ PDF ขนาดเล็กไม่เกิน 1MB)'
-          );
-          if (!proceedOffline) {
-            return;
-          }
+          throw new Error(uploadResult.error || 'การอัปโหลดไฟล์ล้มเหลว');
         }
-      } else {
-        useDrive = true;
-      }
-
-      if (useDrive) {
-        setIsUploading(true);
-        try {
-          const uploadName = simulatedFileName || `สัญญาเช่าจริง_${name.trim()}_${contractNumber.trim()}.pdf`;
-          const result = await uploadFileToDrive(attachedFile, uploadName);
-          finalPdfUrl = result.webViewLink;
-          finalPdfName = uploadName;
-        } catch (uploadError: any) {
-          console.error('Failed to upload file to Google Drive:', uploadError);
-          const proceedOffline = window.confirm(
-            `เกิดข้อผิดพลาดในการอัปโหลดไฟล์ไปยัง Google Drive: ${uploadError.message || uploadError}\n\nต้องการบันทึกไฟล์สัญญานี้ในฐานข้อมูลของระบบโดยตรงแทนหรือไม่?`
-          );
-          if (!proceedOffline) {
-            setIsUploading(false);
-            return;
-          }
-        }
+      } catch (uploadError: any) {
+        console.error('Failed to upload file to Server:', uploadError);
+        alert(`เกิดข้อผิดพลาดในการอัปโหลดไฟล์สัญญาเช่า: ${uploadError.message || uploadError}`);
         setIsUploading(false);
+        return;
       }
+      setIsUploading(false);
     }
 
     // Active Lease object
@@ -1085,59 +1057,15 @@ export default function BranchFormView({
               </h3>
 
               <div className="flex flex-col gap-4 text-xs">
-                {/* Google Drive Connection Info */}
-                <div className="p-3.5 bg-surface rounded-lg border border-outline-variant/60 flex flex-col gap-2">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2.5">
-                      <svg className="w-5 h-5 flex-shrink-0" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M19.43 12.98L14.7 4.76C14.41 4.25 13.86 3.94 13.27 3.94H10.73C10.14 3.94 9.59 4.25 9.3 4.76L4.57 12.98C4.28 13.49 4.28 14.11 4.57 14.62L6.93 18.72C7.22 19.23 7.77 19.54 8.36 19.54H15.64C16.23 19.54 16.78 19.23 17.07 18.72L19.43 14.62C19.72 14.11 19.72 13.49 19.43 12.98Z" fill="#1A73E8"/>
-                        <path d="M13.27 3.94H10.73C10.14 3.94 9.59 4.25 9.3 4.76L4.57 12.98C4.28 13.49 4.28 14.11 4.57 14.62L5.87 12.37L10.05 5.12C10.34 4.61 10.89 4.3 11.48 4.3H13.27C13.86 4.3 14.41 4.61 14.7 5.12L15.64 6.75L13.27 3.94Z" fill="#0F9D58"/>
-                        <path d="M19.43 12.98L17.07 8.9L14.7 12.98C14.41 13.49 13.86 13.8 13.27 13.8H8.36C7.77 13.8 7.22 13.49 6.93 12.98L4.57 12.98C4.28 13.49 4.28 14.11 4.57 14.62L6.93 18.72C7.22 19.23 7.77 19.54 8.36 19.54H15.64C16.23 19.54 16.78 19.23 17.07 18.72L19.43 14.62C19.72 14.11 19.72 13.49 19.43 12.98Z" fill="#FFC107"/>
-                      </svg>
-                      <div>
-                        <p className="text-[11px] font-bold text-on-surface leading-tight">ระบบจัดเก็บคลาวด์ Google Drive</p>
-                        <p className="text-[10px] text-secondary mt-0.5">
-                          {googleUser ? `เชื่อมต่อสำเร็จ: ${googleUser.email}` : 'แนบไฟล์จริงขนาดไม่จำกัด (Public Link) ไปยัง Google Drive'}
-                        </p>
-                      </div>
-                    </div>
-                    {googleUser ? (
-                      <span className="flex items-center gap-1.5 text-[10px] bg-[#2b8a3e]/10 text-[#2b8a3e] px-2.5 py-0.5 rounded-full font-bold">
-                        <span className="w-1.5 h-1.5 rounded-full bg-[#2b8a3e] animate-pulse"></span>
-                        เชื่อมต่อแล้ว
-                      </span>
-                    ) : (
-                      <span className="text-[10px] bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full font-bold">
-                        ยังไม่ได้เชื่อมต่อ
-                      </span>
-                    )}
+                {/* Server Storage Info */}
+                <div className="p-3 bg-surface rounded-lg border border-outline-variant/60 flex flex-col gap-1.5">
+                  <div className="flex items-center gap-2 text-primary font-bold">
+                    <span className="material-symbols-outlined text-[18px]">cloud_sync</span>
+                    <span>ระบบจัดเก็บไฟล์สัญญาเช่าบนเซิร์ฟเวอร์โดยตรง</span>
                   </div>
-
-                  {!googleUser ? (
-                    <button
-                      type="button"
-                      onClick={handleGoogleSignIn}
-                      className="w-full mt-2 py-2 px-3 bg-white hover:bg-surface border border-outline rounded font-semibold text-xs text-on-surface flex items-center justify-center gap-2 shadow-sm transition-colors cursor-pointer"
-                    >
-                      <svg className="w-4 h-4" viewBox="0 0 24 24">
-                        <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" transform="scale(0.5)"></path>
-                        <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" transform="scale(0.5)"></path>
-                        <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" transform="scale(0.5)"></path>
-                        <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" transform="scale(0.5)"></path>
-                      </svg>
-                      เชื่อมต่อกับ Google Drive เพื่ออัปโหลดไฟล์จริง
-                    </button>
-                  ) : (
-                    <div className="flex gap-2 mt-2">
-                      <button
-                        type="button"
-                        onClick={handleGoogleSignIn}
-                        className="flex-1 py-1.5 px-3 bg-white hover:bg-surface border border-outline rounded font-semibold text-[10px] text-secondary text-center cursor-pointer transition-colors"
-                      >
-                        สลับบัญชี Google (Google Drive)
-                      </button>
-                    </div>
-                  )}
+                  <p className="text-[10px] text-secondary leading-relaxed">
+                    เพิ่มความสะดวกด้วยระบบจัดเก็บไฟล์ใหม่ **ไม่จำกัดขนาดไฟล์** ไม่จำเป็นต้องเชื่อมต่อหรือลงชื่อเข้าใช้ Google Account ใดๆ และรองรับการเปิดเปิดดูออนไลน์ได้โดยตรงจากทุกอุปกรณ์และทุกเบราว์เซอร์อย่างปลอดภัย
+                  </p>
                 </div>
 
                 <div
@@ -1158,7 +1086,7 @@ export default function BranchFormView({
                     onChange={handleFileChange}
                     className="hidden"
                   />
-                  <span className="material-symbols-outlined text-3xl text-secondary mb-2">
+                  <span className="material-symbols-outlined text-3xl text-primary mb-2 animate-bounce">
                     picture_as_pdf
                   </span>
                   {simulatedFileName ? (
@@ -1167,13 +1095,13 @@ export default function BranchFormView({
                         {simulatedFileName}
                       </p>
                       <p className="text-[10px] text-secondary">
-                        {attachedFile ? `${(attachedFile.size / (1024 * 1024)).toFixed(2)} MB` : 'พร้อมสำหรับการลิงก์จริง'}
+                        {attachedFile ? `${(attachedFile.size / (1024 * 1024)).toFixed(2)} MB (พร้อมอัปโหลดเซิร์ฟเวอร์)` : 'ไฟล์ต้นฉบับเดิม'}
                       </p>
                     </div>
                   ) : (
                     <div>
                       <p className="text-xs font-bold text-on-surface">ลากไฟล์ PDF สัญญาเช่ามาวาง หรือคลิกที่นี่</p>
-                      <p className="text-[10px] text-secondary mt-1">ไฟล์แนบจะถูกอัปโหลดขึ้นบัญชี Google Drive อัตโนมัติ โดยมีขนาดจริงและเป็น Public</p>
+                      <p className="text-[10px] text-secondary mt-1">ไฟล์จะถูกจัดเก็บไว้บนเซิร์ฟเวอร์หลักของระบบและสามารถเปิดดูออนไลน์ได้ทันที</p>
                     </div>
                   )}
                 </div>
@@ -1181,7 +1109,7 @@ export default function BranchFormView({
                 {!simulatedFileName && (
                   <div className="flex flex-col gap-1.5">
                     <p className="text-[10px] text-secondary font-medium leading-relaxed">
-                      💡 เมื่อทำการอัปโหลดไฟล์ PDF ระบบจะอัปโหลดขึ้น Google Drive เป็นไฟล์สาธารณะ (Public) และแสดงผลเป็นลิงก์เปิดเอกสารโดยตรงในรายละเอียดสาขาโดยไม่ถูกบีบอัดใดๆ
+                      💡 เมื่อทำการบันทึกข้อมูล ไฟล์สัญญา PDF จะถูกส่งไปบันทึกบนระบบโดยตรงอย่างรวดเร็วและปลอดภัย
                     </p>
                   </div>
                 )}

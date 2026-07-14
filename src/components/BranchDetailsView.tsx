@@ -1039,7 +1039,7 @@ export default function BranchDetailsView({
               <div className="flex-1 bg-[#1e2225] p-6 overflow-auto flex flex-col items-center">
                 {isActualPdf ? (
                   <div className="w-full h-full flex flex-col items-center justify-center p-2" id="actual-pdf-viewport">
-                    {currentPdfUrl.startsWith('data:') ? (
+                    {currentPdfUrl.startsWith('data:') || currentPdfUrl.startsWith('/uploads/') ? (
                       <iframe
                         src={currentPdfUrl}
                         title={selectedPdfName}
