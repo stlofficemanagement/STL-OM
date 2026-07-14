@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Branch } from '../types';
+import { downloadFileFromFirestore } from '../lib/fileStorage';
 
 interface BranchDetailsViewProps {
   branch: Branch;
@@ -24,6 +25,9 @@ export default function BranchDetailsView({
   const [selectedPdfName, setSelectedPdfName] = useState('');
   const [pdfPage, setPdfPage] = useState(1);
   const [pdfZoom, setPdfZoom] = useState(100);
+
+  const [loadedPdfUrl, setLoadedPdfUrl] = useState<string | null>(null);
+  const [isLoadingPdf, setIsLoadingPdf] = useState(false);
 
   // Local logs for this branch
   const recentNotes = [
@@ -69,6 +73,42 @@ export default function BranchDetailsView({
   const currentContractNumber = activeLease ? activeLease.id : (branch.contractNumber || 'ไม่มีข้อมูลสัญญา');
   const currentPdfUrl = activeLease?.pdfUrl || branch.pdfUrl || null;
   const currentPdfName = activeLease?.pdfName || branch.pdfFile || `สัญญาเช่าพื้นที่_${branch.name}_ฉบับจริง.pdf`;
+
+  useEffect(() => {
+    let active = true;
+    if (isPdfViewerOpen && currentPdfUrl) {
+      if (currentPdfUrl.startsWith('dbfile://')) {
+        setIsLoadingPdf(true);
+        // Extract the fileId from dbfile://fileId/...
+        const fileId = currentPdfUrl.replace('dbfile://', '').split('/')[0];
+        downloadFileFromFirestore(fileId)
+          .then(objectUrl => {
+            if (active) {
+              setLoadedPdfUrl(objectUrl);
+              setIsLoadingPdf(false);
+            }
+          })
+          .catch(err => {
+            console.error("Error loading PDF from Firestore chunks:", err);
+            if (active) {
+              alert("ไม่สามารถโหลดไฟล์ PDF ได้เนื่องจากข้อผิดพลาด: " + err.message);
+              setIsLoadingPdf(false);
+            }
+          });
+      } else {
+        setLoadedPdfUrl(currentPdfUrl);
+      }
+    } else {
+      if (loadedPdfUrl && loadedPdfUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(loadedPdfUrl);
+      }
+      setLoadedPdfUrl(null);
+      setIsLoadingPdf(false);
+    }
+    return () => {
+      active = false;
+    };
+  }, [isPdfViewerOpen, currentPdfUrl]);
 
   // Resolved lease variables for display
   const displayStartDate = activeLease?.startDate || branch.startDate;
@@ -166,7 +206,7 @@ export default function BranchDetailsView({
 
   // ฟังก์ชันสำหรับดาวน์โหลดไฟล์ PDF
   const downloadFile = (url: string, filename: string) => {
-    if (url.startsWith('data:')) {
+    if (url.startsWith('data:') || url.startsWith('blob:')) {
       try {
         const link = document.createElement('a');
         link.href = url;
@@ -175,11 +215,28 @@ export default function BranchDetailsView({
         link.click();
         document.body.removeChild(link);
       } catch (e) {
-        console.error("Failed to download Base64 file:", e);
-        alert("เกิดข้อผิดพลาดในการดาวน์โหลดเอกสาร");
+        console.error("Failed to download local file:", e);
+        // Fallback to open in new tab
+        const link = document.createElement('a');
+        link.href = url;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
       }
     } else {
-      window.open(url, '_blank', 'noopener,noreferrer');
+      try {
+        const link = document.createElement('a');
+        link.href = url;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      } catch (e) {
+        window.open(url, '_blank', 'noopener,noreferrer');
+      }
     }
   };
 
@@ -1012,8 +1069,8 @@ export default function BranchDetailsView({
 
                   <button
                     onClick={() => {
-                      if (isActualPdf && currentPdfUrl) {
-                        downloadFile(currentPdfUrl, selectedPdfName || 'สัญญาเช่า.pdf');
+                      if (isActualPdf && loadedPdfUrl) {
+                        downloadFile(loadedPdfUrl, selectedPdfName || 'สัญญาเช่า.pdf');
                       } else {
                         alert(`กำลังเริ่มดาวน์โหลดไฟล์: ${selectedPdfName || 'สัญญาเช่า'}`);
                       }
@@ -1037,49 +1094,80 @@ export default function BranchDetailsView({
 
               {/* Document display viewport */}
               <div className="flex-1 bg-[#1e2225] p-6 overflow-auto flex flex-col items-center">
-                {isActualPdf ? (
-                  <div className="w-full h-full flex flex-col items-center justify-center p-2" id="actual-pdf-viewport">
-                    {currentPdfUrl.startsWith('data:') || currentPdfUrl.startsWith('/uploads/') || currentPdfUrl.includes('firebasestorage.googleapis.com') ? (
-                      <iframe
-                        src={currentPdfUrl}
-                        title={selectedPdfName}
-                        className="w-full h-[72vh] border border-[#3e444b] rounded bg-white shadow-lg"
-                        id="actual-pdf-base64-iframe"
-                      />
-                    ) : (
-                      (() => {
-                        const driveIdMatch = currentPdfUrl.match(/\/file\/d\/([^/]+)/);
+                {isLoadingPdf ? (
+                  <div className="w-full h-[72vh] flex flex-col items-center justify-center gap-3 text-gray-400">
+                    <div className="w-10 h-10 border-4 border-primary/20 border-t-primary rounded-full animate-spin"></div>
+                    <p className="text-xs font-semibold animate-pulse">กำลังดึงข้อมูลและประกอบไฟล์สัญญาเช่าจากระบบฐานข้อมูล...</p>
+                    <p className="text-[10px] text-gray-500">กรุณารอสักครู่ ระบบกำลังประมวลผลไฟล์ต้นฉบับดั้งเดิม</p>
+                  </div>
+                ) : isActualPdf ? (
+                  <div className="w-full h-full flex flex-col gap-4 p-1" id="actual-pdf-viewport">
+                    {/* แถบแจ้งเตือนการดาวน์โหลดและเปิดดูแบบเต็มจอ */}
+                    <div className="flex flex-col md:flex-row items-center justify-between gap-3 bg-[#252a30] border border-[#3e444b] rounded-xl px-5 py-3 text-xs shadow-md">
+                      <div className="flex items-center gap-2.5 text-gray-300">
+                        <span className="material-symbols-outlined text-[20px] text-primary">info</span>
+                        <div className="text-left font-sans">
+                          <p className="font-semibold text-gray-200">ระบบแสดงผลสัญญาออนไลน์แบบเรียลไทม์</p>
+                          <p className="text-[10px] text-gray-400 mt-0.5">หากหน้าจอไม่แสดงตัวอย่างเอกสารเนื่องจากข้อจำกัดความปลอดภัย สามารถเลือกเปิดดูแท็บใหม่หรือดาวน์โหลดลงเครื่องได้ทันที</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2.5 w-full md:w-auto">
+                        <a
+                          href={loadedPdfUrl || currentPdfUrl || '#'}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex-1 md:flex-initial bg-primary/20 hover:bg-primary/30 text-primary border border-primary/40 font-sans font-bold px-4 py-2 rounded-lg transition-all duration-150 cursor-pointer flex items-center justify-center gap-1.5 hover:scale-[1.02] active:scale-[0.98]"
+                          id="btn-view-fullscreen"
+                        >
+                          <span className="material-symbols-outlined text-[16px]">open_in_new</span>
+                          เปิดแบบเต็มจอ
+                        </a>
+                        
+                        <button
+                          onClick={() => {
+                            if (loadedPdfUrl) {
+                              downloadFile(loadedPdfUrl, selectedPdfName || 'สัญญาเช่า.pdf');
+                            } else if (currentPdfUrl) {
+                              downloadFile(currentPdfUrl, selectedPdfName || 'สัญญาเช่า.pdf');
+                            }
+                          }}
+                          className="flex-1 md:flex-initial bg-[#2d3238] hover:bg-[#3e444b] text-gray-200 border border-[#4e545b] font-sans text-xs font-bold px-4 py-2 rounded-lg transition-all duration-150 cursor-pointer flex items-center justify-center gap-1.5 hover:scale-[1.02] active:scale-[0.98]"
+                          id="btn-download-pdf-direct"
+                        >
+                          <span className="material-symbols-outlined text-[16px]">download</span>
+                          ดาวน์โหลดสัญญา
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* ตัวอย่างเอกสาร PDF */}
+                    <div className="flex-1 min-h-[68vh] w-full rounded-xl bg-white border border-[#3e444b] shadow-2xl overflow-hidden relative">
+                      {(() => {
+                        const targetUrl = loadedPdfUrl || currentPdfUrl || '';
+                        const driveIdMatch = targetUrl.match(/\/file\/d\/([^/]+)/);
                         if (driveIdMatch && driveIdMatch[1]) {
                           const embedUrl = `https://drive.google.com/file/d/${driveIdMatch[1]}/preview`;
                           return (
                             <iframe
                               src={embedUrl}
                               title={selectedPdfName}
-                              className="w-full h-[72vh] border border-[#3e444b] rounded bg-white shadow-lg"
+                              className="w-full h-full min-h-[68vh] border-0"
                               allow="autoplay"
                               id="actual-pdf-drive-iframe"
                             />
                           );
                         } else {
                           return (
-                            <div className="text-center text-gray-400 py-12 bg-[#2d3238] p-8 rounded-lg border border-[#3e444b]">
-                              <span className="material-symbols-outlined text-[48px] mb-3 text-primary">link</span>
-                              <p className="text-sm font-semibold">ลิงก์เอกสารไม่ได้อยู่ในรูปแบบ Google Drive หรือ Base64</p>
-                              <p className="text-xs text-gray-400 mt-1 max-w-md mx-auto">ท่านยังคงสามารถคลิกปุ่มด้านล่างเพื่อลองเปิดไฟล์ในหน้าต่างใหม่ของเบราว์เซอร์</p>
-                              <a
-                                href={currentPdfUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="mt-5 inline-flex items-center gap-2 bg-primary hover:bg-primary/90 text-white font-sans text-xs font-bold px-5 py-2.5 rounded shadow-sm transition-all"
-                              >
-                                <span className="material-symbols-outlined text-[16px]">open_in_new</span>
-                                เปิดเอกสารในหน้าต่างใหม่
-                              </a>
-                            </div>
+                            <iframe
+                              src={targetUrl}
+                              title={selectedPdfName}
+                              className="w-full h-full min-h-[68vh] border-0"
+                              id="actual-pdf-base64-iframe"
+                            />
                           );
                         }
-                      })()
-                    )}
+                      })()}
+                    </div>
                   </div>
                 ) : (
                   <div

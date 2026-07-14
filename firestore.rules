@@ -32,6 +32,23 @@ service cloud.firestore {
         && data.createdDate is string;
     }
 
+    // Validation for files
+    function isValidFileMetadata(data) {
+      return data.id is string
+        && data.fileName is string
+        && data.fileType is string
+        && data.totalChunks is number
+        && data.totalSize is number
+        && data.uploadedAt is string;
+    }
+
+    // Validation for file chunks
+    function isValidFileChunk(data) {
+      return data.fileId is string
+        && data.index is number
+        && data.data is string;
+    }
+
     // Catch-all safety net
     match /{document=**} {
       allow read, write: if false;
@@ -56,6 +73,20 @@ service cloud.firestore {
       allow read: if true;
       allow create, update: if isValidId(sessionId) && isValidSession(incoming());
       allow delete: if isValidId(sessionId);
+    }
+
+    // Files metadata collection rules
+    match /files/{fileId} {
+      allow read: if true;
+      allow create, update: if isValidId(fileId) && isValidFileMetadata(incoming());
+      allow delete: if isValidId(fileId);
+    }
+
+    // File chunks collection rules
+    match /fileChunks/{chunkId} {
+      allow read: if true;
+      allow create, update: if isValidId(chunkId) && isValidFileChunk(incoming());
+      allow delete: if isValidId(chunkId);
     }
   }
 }

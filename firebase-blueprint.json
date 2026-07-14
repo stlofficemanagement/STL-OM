@@ -79,6 +79,31 @@
         "endDateFilter": { "type": "string" }
       },
       "required": ["id", "name", "createdDate"]
+    },
+    "FileMetadata": {
+      "title": "FileMetadata",
+      "description": "Metadata for chunked files stored in Firestore",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "fileName": { "type": "string" },
+        "fileType": { "type": "string" },
+        "totalChunks": { "type": "number" },
+        "totalSize": { "type": "number" },
+        "uploadedAt": { "type": "string" }
+      },
+      "required": ["id", "fileName", "fileType", "totalChunks", "totalSize", "uploadedAt"]
+    },
+    "FileChunk": {
+      "title": "FileChunk",
+      "description": "Data chunk of a file stored in Firestore",
+      "type": "object",
+      "properties": {
+        "fileId": { "type": "string" },
+        "index": { "type": "number" },
+        "data": { "type": "string" }
+      },
+      "required": ["fileId", "index", "data"]
     }
   },
   "firestore": {
@@ -93,6 +118,14 @@
     "sessions": {
       "schema": "RenewalConsiderationSession",
       "description": "Collection of renewal consideration reports/sessions"
+    },
+    "files": {
+      "schema": "FileMetadata",
+      "description": "Collection of chunked file metadata"
+    },
+    "fileChunks": {
+      "schema": "FileChunk",
+      "description": "Collection of individual chunk data for files"
     }
   }
 }

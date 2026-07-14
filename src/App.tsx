@@ -146,7 +146,10 @@ export default function App() {
       const unsubscribeBranches = onSnapshot(branchesRef, (snapshot) => {
         const branchesList: Branch[] = [];
         snapshot.forEach((docSnap) => {
-          branchesList.push(docSnap.data() as Branch);
+          const data = docSnap.data();
+          if (data && data.id && !data.id.startsWith('dbfile_')) {
+            branchesList.push(data as Branch);
+          }
         });
         // Sort branches by ID so they are shown in order
         branchesList.sort((a, b) => a.id.localeCompare(b.id));

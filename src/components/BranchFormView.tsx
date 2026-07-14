@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { User } from 'firebase/auth';
 import { Branch, Lease } from '../types';
 import { initAuth, googleSignIn, uploadFileToDrive } from '../lib/drive';
-import { uploadFileToFirebaseStorage } from '../lib/firebase';
+import { uploadFileToFirestore } from '../lib/fileStorage';
 
 export const DEFAULT_BRANCH_TYPES = [
   'AIS BUDDY',
@@ -314,16 +314,16 @@ export default function BranchFormView({
     let finalPdfUrl = pdfUrl;
     let finalPdfName = simulatedFileName;
 
-    // Firebase Storage File Upload Logic
+    // Firestore Chunked File Upload Logic
     if (attachedFile) {
       setIsUploading(true);
       try {
         const uploadName = simulatedFileName || `สัญญาเช่าจริง_${name.trim()}_${contractNumber.trim()}.pdf`;
-        const downloadUrl = await uploadFileToFirebaseStorage(attachedFile, uploadName);
+        const downloadUrl = await uploadFileToFirestore(attachedFile);
         finalPdfUrl = downloadUrl;
         finalPdfName = uploadName;
       } catch (uploadError: any) {
-        console.error('Failed to upload file to Firebase Storage:', uploadError);
+        console.error('Failed to upload file to Firestore:', uploadError);
         alert(`เกิดข้อผิดพลาดในการอัปโหลดไฟล์สัญญาเช่า: ${uploadError.message || uploadError}`);
         setIsUploading(false);
         return;

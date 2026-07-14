@@ -3,7 +3,7 @@ import { User } from 'firebase/auth';
 import { Branch } from '../types';
 import { generateNextContractNumber } from './BranchFormView';
 import { initAuth, googleSignIn, uploadFileToDrive } from '../lib/drive';
-import { uploadFileToFirebaseStorage } from '../lib/firebase';
+import { uploadFileToFirestore } from '../lib/fileStorage';
 
 interface RenewLeaseViewProps {
   branches: Branch[];
@@ -228,16 +228,16 @@ export default function RenewLeaseView({
     let finalPdfUrl = pdfUrl;
     let finalFileName = simulatedFileName || `สัญญาเช่าพื้นที่_${selectedBranch?.name || ''}_ต่ออายุ_${newContractNumber}.pdf`;
 
-    // Firebase Storage File Upload Logic
+    // Firestore Chunked File Upload Logic
     if (attachedFile) {
       setIsUploading(true);
       try {
         const uploadName = simulatedFileName || `สัญญาเช่าพื้นที่_${selectedBranch?.name || ''}_ต่ออายุ_${newContractNumber}.pdf`;
-        const downloadUrl = await uploadFileToFirebaseStorage(attachedFile, uploadName);
+        const downloadUrl = await uploadFileToFirestore(attachedFile);
         finalPdfUrl = downloadUrl;
         finalFileName = uploadName;
       } catch (uploadError: any) {
-        console.error('Failed to upload file to Firebase Storage:', uploadError);
+        console.error('Failed to upload file to Firestore:', uploadError);
         alert(`เกิดข้อผิดพลาดในการอัปโหลดไฟล์สัญญาเช่า: ${uploadError.message || uploadError}`);
         setIsUploading(false);
         return;
